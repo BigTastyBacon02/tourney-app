@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Promi-Duell</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0b0e1a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Promi-Duell">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+  :root{
+    --bg:#0b0e1a; --bg2:#0c1229;
+    --card:#121831; --line:#1e2849;
+    --txt:#e8ecff; --muted:#9fb0d1;
+    --brand:#57d0ff; --ok:#21d19f; --bad:#ff5470;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;font-family:-apple-system,system-ui,Segoe UI,Roboto,Arial,sans-serif;
+       background: radial-gradient(1200px 700px at 50% -100px, #10204a 0%, var(--bg) 55%), linear-gradient(#0b0e1a,#0b0e1a);
+       color:var(--txt); padding:16px}
+  h1{margin:0 0 8px; font-size:24px; letter-spacing:.5px}
+  .sub{color:var(--muted); font-size:12px; margin-bottom:10px}
+  .grid{display:grid; grid-template-columns:280px 1fr; gap:12px}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:12px; box-shadow:0 6px 24px rgba(0,0,0,.25)}
+  textarea,input[type=number]{width:100%; padding:10px; border-radius:12px; border:1px solid var(--line); background:#0c1225; color:var(--txt); font-size:16px}
+  .btn{border:0; border-radius:14px; padding:12px 16px; font-weight:800; cursor:pointer}
+  .btn.pri{background:linear-gradient(180deg,#6fe1ff,#2b9dff); color:#00122a; text-shadow:0 1px 0 rgba(255,255,255,.2)}
+  .btn.sec{background:#0d152e; color:var(--txt); border:1px solid var(--line)}
+  .row{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+  .pill{display:inline-flex; align-items:center; gap:8px; padding:6px 10px; margin:4px 4px 0 0; border-radius:999px; background:#0d152e; border:1px solid var(--line); font-size:13px}
+  .list{min-height:80px}
+  .duel{display:grid; grid-template-columns:1fr auto 1fr; gap:12px; align-items:start}
+  .slot{display:flex; flex-direction:column; gap:10px}
+  .shot{width:100%; max-width:320px; aspect-ratio:1/1; border-radius:16px; border:1px solid var(--line); background:#0c1225; object-fit:cover}
+  .name{font-size:18px; font-weight:800; text-align:center}
+  .pick{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+  .thumbs{display:flex; gap:8px; overflow:auto; padding-bottom:4px}
+  .thumbs img{width:72px;height:72px;border-radius:10px;border:1px solid var(--line); background:#0c1225; object-fit:cover; flex:0 0 auto; cursor:pointer}
+  .chips{display:flex; gap:6px; flex-wrap:wrap}
+  .chip{border:1px solid var(--line); background:#0c1225; color:var(--muted); font-size:12px; padding:6px 10px; border-radius:10px}
+  .chip a{color:#9ed2ff; text-decoration:none}
+  .choose{display:grid; grid-template-columns:1fr 1fr; gap:8px}
+  .choose .btn{font-size:18px}
+  .ok{background:linear-gradient(180deg,#5dffce,#16c48a); color:#001a12}
+  .bad{background:linear-gradient(180deg,#ff9ab0,#ff5470); color:#2a0009}
+  .footer{display:flex; gap:8px; align-items:center; justify-content:space-between}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+  <h1>🎮 Promi‑Duell</h1>
+  <div class="sub">Trage Namen ein → Start. Bei jedem VS suchst du schnell ein Bild (Google/Bing/Yandex/DDG Links), fügst URL/Foto hinzu und wählst den Gewinner. Alles offline als PWA, ohne Filter.</div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="row">
+        <label style="flex:1 1 auto">
+          <div class="sub">Ziel‑Anzahl</div>
+          <input id="target" type="number" value="1" min="1">
+        </label>
+      </div>
+      <div class="sub" style="margin-top:8px">Namen (je Zeile)</div>
+      <textarea id="names" rows="10" placeholder="Name 1
+Name 2
+Name 3"></textarea>
+      <div class="row" style="margin-top:10px">
+        <button class="btn pri" id="startBtn">Start</button>
+        <button class="btn sec" id="demoBtn">Demo</button>
+        <button class="btn sec" id="exportBtn">Export</button>
+        <label class="btn sec" for="importFile">Import</label>
+        <input id="importFile" type="file" accept="application/json" class="hidden">
+      </div>
+      <div style="margin-top:10px">
+        <div class="sub">Drin</div>
+        <div id="listIn" class="list"></div>
+        <div class="sub" style="margin-top:10px">Raus</div>
+        <div id="listOut" class="list"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div id="arena" class="hidden">
+        <div class="duel">
+          <div class="slot">
+            <img id="li" class="shot" src="assets/placeholder.png" alt="links">
+            <div class="name" id="lname">–</div>
+            <div class="pick">
+              <input id="lurl" placeholder="https:// Bild‑URL" style="flex:1 1 160px; padding:8px; border-radius:10px; border:1px solid var(--line); background:#0c1225; color:var(--txt)">
+              <button class="btn sec" id="lset">Setzen</button>
+              <input id="lfile" type="file" accept="image/*" class="hidden">
+              <label class="btn sec" for="lfile">Datei</label>
+              <button class="btn sec" id="lpaste">📋</button>
+            </div>
+            <div class="chips" id="lchips"></div>
+            <div class="thumbs" id="lgal"></div>
+          </div>
+          <div style="align-self:center; font-weight:900; opacity:.9">VS</div>
+          <div class="slot">
+            <img id="ri" class="shot" src="assets/placeholder.png" alt="rechts">
+            <div class="name" id="rname">–</div>
+            <div class="pick">
+              <input id="rurl" placeholder="https:// Bild‑URL" style="flex:1 1 160px; padding:8px; border-radius:10px; border:1px solid var(--line); background:#0c1225; color:var(--txt)">
+              <button class="btn sec" id="rset">Setzen</button>
+              <input id="rfile" type="file" accept="image/*" class="hidden">
+              <label class="btn sec" for="rfile">Datei</label>
+              <button class="btn sec" id="rpaste">📋</button>
+            </div>
+            <div class="chips" id="rchips"></div>
+            <div class="thumbs" id="rgal"></div>
+          </div>
+        </div>
+
+        <div class="choose" style="margin-top:10px">
+          <button class="btn ok" id="chooseLeft">⬅️ Links gewinnt</button>
+          <button class="btn bad" id="chooseRight">Rechts gewinnt ➡️</button>
+        </div>
+
+        <div class="footer" style="margin-top:10px">
+          <div class="row">
+            <button class="btn sec" id="undoBtn" disabled>Rückgängig</button>
+            <button class="btn sec" id="shuffleBtn">Neu mischen</button>
+          </div>
+          <div class="sub" id="status"></div>
+        </div>
+      </div>
+
+      <div id="result" class="hidden">
+        <h3>🏆 Übrig</h3>
+        <div id="survivors"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const $=s=>document.querySelector(s);
+const namesEl=$('#names'), targetEl=$('#target'), startBtn=$('#startBtn'), demoBtn=$('#demoBtn');
+const exportBtn=$('#exportBtn'), importFile=$('#importFile');
+const arena=$('#arena'), result=$('#result'), survivors=$('#survivors');
+const li=$('#li'), ri=$('#ri'), lname=$('#lname'), rname=$('#rname');
+const lurl=$('#lurl'), rurl=$('#rurl'), lset=$('#lset'), rset=$('#rset'), lfile=$('#lfile'), rfile=$('#rfile'), lpaste=$('#lpaste'), rpaste=$('#rpaste');
+const lchips=$('#lchips'), rchips=$('#rchips'), lgal=$('#lgal'), rgal=$('#rgal');
+const chooseLeft=$('#chooseLeft'), chooseRight=$('#chooseRight');
+const undoBtn=$('#undoBtn'), shuffleBtn=$('#shuffleBtn'), status=$('#status');
+const listIn=$('#listIn'), listOut=$('#listOut');
+
+let pool=[], out=[], currentPair=[], history=[], target=1;
+const LS_KEY='promiDuellPicsV1', gallery=loadLS();
+
+function loadLS(){ try{ return JSON.parse(localStorage.getItem(LS_KEY)||'{}'); }catch(e){ return {}; } }
+function saveLS(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(gallery)); }catch(e){} }
+function uniq(a){return Array.from(new Set(a));}
+
+function addToGallery(name, src){
+  if(!src) return;
+  gallery[name]=gallery[name]||[];
+  if(!gallery[name].includes(src)) gallery[name].unshift(src);
+  saveLS();
+}
+
+async function fileToDataURL(file, maxW=720){
+  const img = document.createElement('img');
+  const fr = new FileReader();
+  const p = new Promise((res,rej)=>{
+    fr.onload=()=>{ img.onload=()=>{
+      const scale=Math.min(1, maxW/img.width);
+      const w=Math.round(img.width*scale), h=Math.round(img.height*scale);
+      const cnv=document.createElement('canvas'); cnv.width=w; cnv.height=h;
+      const ctx=cnv.getContext('2d'); ctx.drawImage(img,0,0,w,h);
+      res(cnv.toDataURL('image/jpeg', 0.9));
+    }; img.onerror=rej; img.src=fr.result; };
+    fr.onerror=rej;
+  });
+  fr.readAsDataURL(file); return p;
+}
+
+function searchChips(name, el){
+  el.innerHTML='';
+  const engines=[
+    {k:'Google', u:'https://www.google.com/search?tbm=isch&safe=off&q='+encodeURIComponent(name)},
+    {k:'Bing',   u:'https://www.bing.com/images/search?q='+encodeURIComponent(name)+'&safeSearch=Off'},
+    {k:'Yandex', u:'https://yandex.com/images/search?text='+encodeURIComponent(name)},
+    {k:'DuckDuckGo', u:'https://duckduckgo.com/?iax=images&ia=images&kp=-2&q='+encodeURIComponent(name)}
+  ];
+  engines.forEach(e=>{
+    const s=document.createElement('span'); s.className='chip';
+    s.innerHTML='<a target="_blank" href="'+e.u+'">🔎 '+e.k+'</a>';
+    el.appendChild(s);
+  });
+  const tip=document.createElement('span'); tip.className='chip';
+  tip.textContent='Tipp: Lange auf Bild → Link kopieren → hier einfügen';
+  el.appendChild(tip);
+}
+
+function renderThumbs(name, el, big){
+  el.innerHTML='';
+  const arr = (gallery[name]||[]);
+  arr.forEach(src=>{
+    const im=document.createElement('img'); im.src=src; im.onclick=()=> big.src=src;
+    el.appendChild(im);
+  });
+}
+
+function renderSide(name, big, urlInput, setBtn, fileInput, pasteBtn, chips, gal){
+  (big.src='assets/placeholder.png');
+  searchChips(name, chips);
+  renderThumbs(name, gal, big);
+
+  setBtn.onclick=()=>{
+    const v=urlInput.value.trim(); if(!v){ alert('Bild-URL einfügen oder Datei wählen.'); return; }
+    if(!/^https?:\/\//i.test(v)){ alert('Bitte vollständige URL (http/https).'); return; }
+    addToGallery(name, v); big.src=v; renderThumbs(name, gal, big); urlInput.value='';
+  };
+  fileInput.onchange=async ()=>{
+    const f=fileInput.files && fileInput.files[0]; if(!f) return;
+    const data=await fileToDataURL(f, 720);
+    addToGallery(name, data); big.src=data; renderThumbs(name, gal, big); fileInput.value='';
+  };
+  pasteBtn.onclick=async ()=>{
+    try{
+      const txt=await navigator.clipboard.readText();
+      if(/^https?:\/\//i.test(txt)){ addToGallery(name, txt); big.src=txt; renderThumbs(name, gal, big); }
+      else alert('Keine http(s)-Bild-URL in der Zwischenablage.');
+    }catch(e){ alert('Kein Clipbard-Zugriff. Bitte URL-Feld nutzen.'); }
+  };
+}
+
+function drawPair(){
+  if(pool.length<=1) return;
+  const a=Math.floor(Math.random()*pool.length);
+  let b=Math.floor(Math.random()*pool.length); while(b===a) b=Math.floor(Math.random()*pool.length);
+  currentPair=[pool[a], pool[b]];
+  lname.textContent=currentPair[0]; rname.textContent=currentPair[1];
+  renderSide(currentPair[0], li, lurl, lset, lfile, lpaste, lchips, lgal);
+  renderSide(currentPair[1], ri, rurl, rset, rfile, rpaste, rchips, rgal);
+  status.textContent = pool.length + ' aktiv | Ziel: ' + target;
+}
+
+function start(){
+  pool = uniq(namesEl.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean));
+  target=Math.max(1, parseInt(targetEl.value||'1',10));
+  out=[]; history=[];
+  if(pool.length<2 || target>=pool.length){ alert('Mind. 2 Namen & Ziel kleiner als Anzahl.'); return; }
+  listIn.innerHTML=''; listOut.innerHTML='';
+  pool.forEach(n=>{ const d=document.createElement('div'); d.className='pill'; d.textContent=n; listIn.appendChild(d); });
+  arena.classList.remove('hidden'); result.classList.add('hidden');
+  drawPair(); undoBtn.disabled=true;
+}
+
+function pick(idx){
+  if(currentPair.length<2) return;
+  const w=currentPair[idx], l=currentPair[1-idx];
+  pool = pool.filter(n=>n!==w && n!==l); pool.push(w); out.push(l);
+  history.push({w,l}); undoBtn.disabled=false;
+  // Move chips
+  listIn.innerHTML=''; listOut.innerHTML='';
+  pool.forEach(n=>{ const d=document.createElement('div'); d.className='pill'; d.textContent=n; listIn.appendChild(d); });
+  out.forEach(n=>{ const d=document.createElement('div'); d.className='pill'; d.textContent=n; listOut.appendChild(d); });
+  if(pool.length<=target){
+    arena.classList.add('hidden'); result.classList.remove('hidden'); survivors.innerHTML='';
+    pool.forEach(n=>{ const d=document.createElement('div'); d.className='pill'; d.textContent=n; survivors.appendChild(d); });
+    return;
+  }
+  drawPair();
+}
+
+function undo(){
+  const h=history.pop(); if(!h) return;
+  pool = pool.filter(n=>n!==h.w);
+  const j=out.lastIndexOf(h.l); if(j>-1) out.splice(j,1);
+  pool.push(h.w, h.l); undoBtn.disabled = history.length===0;
+  listIn.innerHTML=''; listOut.innerHTML='';
+  pool.forEach(n=>{ const d=document.createElement('div'); d.className='pill'; d.textContent=n; listIn.appendChild(d); });
+  out.forEach(n=>{ const d=document.createElement('div'); d.className='pill'; d.textContent=n; listOut.appendChild(d); });
+  drawPair();
+}
+
+function exportData(){
+  const data = JSON.stringify(gallery, null, 2);
+  const blob = new Blob([data], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download='bilder.json'; a.click();
+  URL.revokeObjectURL(url);
+}
+function importData(f){
+  const fr=new FileReader();
+  fr.onload=()=>{
+    try{
+      const obj=JSON.parse(fr.result);
+      if(obj && typeof obj==='object'){ Object.assign(gallery, obj); saveLS(); alert('Import ok.'); }
+      else alert('Ungültige Datei.');
+    }catch(e){ alert('Fehler beim Import.'); }
+  };
+  fr.readAsText(f);
+}
+
+startBtn.onclick=start;
+demoBtn.onclick=()=>{ namesEl.value = ['Mia Malkova','Johnny Sins','Margot Robbie','Tom Cruise','Ariana Grande','Zendaya'].join('\n'); };
+chooseLeft.onclick=()=>pick(0);
+chooseRight.onclick=()=>pick(1);
+undoBtn.onclick=undo;
+shuffleBtn.onclick=drawPair;
+exportBtn.onclick=exportData;
+importFile.onchange=()=>{ const f=importFile.files && importFile.files[0]; if(f) importData(f); };
+</script>
+
+<script>
+// Register SW for PWA
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('./sw.js').catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
