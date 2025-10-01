@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>1×1 Auswahl – Promi-Raten</title>
+  <title>1×1 Auswahl – Promi-Raten (Fix)</title>
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#1f6feb">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -34,7 +34,6 @@
     .src{font-size:11px;color:var(--muted)}
     .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;z-index:999999}
     .lightbox img{max-width:90vw;max-height:85vh;border-radius:12px;border:1px solid #333}
-    .warn{background:#221; border:1px solid #522; color:#f6c; border-radius:10px; padding:8px 10px; font-size:12px; margin-top:6px}
   </style>
 </head>
 <body>
@@ -49,7 +48,6 @@
     <textarea id="names" placeholder="Name 1
 Name 2
 Name 3"></textarea>
-    <div class="warn">Hinweis: Bilder kommen aus <b>Wikidata/Wikimedia Commons</b> und <b>Openverse</b>. Für Promis und Adult-Stars liefert Wikidata oft sehr genaue Porträts (Eigenschaft P18). Openverse ergänzt zusätzliche Bilder. Es kann trotzdem Ausreißer geben.</div>
   </div>
 
   <div class="layout">
@@ -104,45 +102,35 @@ const listIn=$('#listIn'), listOut=$('#listOut'), cntIn=$('#cntIn'), cntOut=$('#
 const lb=$('#lb'), lbimg=$('#lbimg');
 
 let pool=[], out=[], currentPair=[], history=[], target=1;
-const cachePrimary={}, cacheGalleries={}, cacheThumbs={};
+const cachePrimary={}, cacheGalleries={};
 
+// --- APIs
 const WD_SEARCH = 'https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&origin=*&language=en&uselang=en&type=item&limit=5&search=';
 const WD_GET = 'https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&origin=*&props=claims&ids=';
 
-// Helpers
 function uniq(a){return Array.from(new Set(a));}
 function hostOf(u){try{return new URL(u).host;}catch(e){return ''; }}
 
+// Wikidata helpers
 async function wikidataLookup(name){
-  // Try EN then DE
   let q = await fetch(WD_SEARCH + encodeURIComponent(name)).then(r=>r.json()).catch(()=>null);
   if(!q || !q.search || !q.search.length){
     q = await fetch(WD_SEARCH.replace('language=en','language=de').replace('uselang=en','uselang=de') + encodeURIComponent(name)).then(r=>r.json()).catch(()=>null);
   }
   if(!q || !q.search || !q.search.length) return null;
-  // Prefer items that are humans (we'll verify on wbgetentities)
-  const cand = q.search[0];
-  return cand.id; // Q-id
+  return q.search[0].id; // Q-id
 }
-
 function claimImageFilename(entity){
-  // P18 image
-  const cl = entity && entity.claims && entity.claims.P18;
-  if(!cl || !cl.length) return null;
-  const v = cl[0].mainsnak.datavalue && cl[0].mainsnak.datavalue.value;
-  return v || null; // filename like "Some Person.jpg"
+  const cl = entity && entity.claims && entity.claims.P18; if(!cl||!cl.length) return null;
+  const v = cl[0].mainsnak.datavalue && cl[0].mainsnak.datavalue.value; return v||null;
 }
 function claimCommonsCategory(entity){
-  const cl = entity && entity.claims && entity.claims.P373;
-  if(!cl || !cl.length) return null;
-  const v = cl[0].mainsnak.datavalue && cl[0].mainsnak.datavalue.value;
-  return v || null; // category title
+  const cl = entity && entity.claims && entity.claims.P373; if(!cl||!cl.length) return null;
+  const v = cl[0].mainsnak.datavalue && cl[0].mainsnak.datavalue.value; return v||null;
 }
-
 function commonsFileURL(filename,width=400){
   return 'https://commons.wikimedia.org/wiki/Special:FilePath/'+encodeURIComponent(filename)+'?width='+width;
 }
-
 async function commonsCategoryThumbs(cat, n=10, width=320){
   const ep='https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&generator=categorymembers&gcmtype=file&gcmlimit='+n+'&gcmtitle=Category:'+encodeURIComponent(cat)+'&prop=imageinfo&iiprop=url&iiurlwidth='+width;
   try{
@@ -156,7 +144,6 @@ async function commonsCategoryThumbs(cat, n=10, width=320){
     }).filter(Boolean);
   }catch(e){ return []; }
 }
-
 async function openverseThumbs(name,n=10,allowMature=true){
   const u='https://api.openverse.engineering/v1/images/?q='+encodeURIComponent(name)+'&page_size='+n+(allowMature?'&mature=true':'&mature=false');
   try{
@@ -165,7 +152,6 @@ async function openverseThumbs(name,n=10,allowMature=true){
     return (j.results||[]).map(it=>({src:it.thumbnail||it.url, creditUrl:it.foreign_landing_url||it.url}));
   }catch(e){ return []; }
 }
-
 async function loadPrimary(name){
   if(cachePrimary[name]) return cachePrimary[name];
   const qid = await wikidataLookup(name);
@@ -183,7 +169,6 @@ async function loadPrimary(name){
   cachePrimary[name]=primary;
   return primary;
 }
-
 async function loadGallery(name){
   if(cacheGalleries[name]) return cacheGalleries[name];
   const qid = await wikidataLookup(name);
@@ -197,35 +182,28 @@ async function loadGallery(name){
       imgs = imgs.concat(cms);
     }
     const fn = claimImageFilename(ent);
-    if(fn){
-      imgs.unshift({src: commonsFileURL(fn, 600), creditUrl: 'https://www.wikidata.org/wiki/'+qid});
-    }
+    if(fn){ imgs.unshift({src: commonsFileURL(fn, 600), creditUrl: 'https://www.wikidata.org/wiki/'+qid}); }
   }
   const ov = await openverseThumbs(name, 12, adultEl.checked);
   imgs = imgs.concat(ov);
-  // dedupe
   const seen=new Set(), out=[];
   imgs.forEach(it=>{ if(it && it.src){ const k=it.src.toLowerCase(); if(!seen.has(k)){ seen.add(k); out.push(it); } } });
   cacheGalleries[name]=out;
   return out;
 }
-
 function pill(name, toBox){
   const div=document.createElement('div');div.className='pill';
   const img=document.createElement('img');img.className='thumb';div.appendChild(img);
   div.appendChild(document.createTextNode(' '+name)); toBox.appendChild(div);
   (async()=>{const p=await loadPrimary(name); if(p&&p.src) img.src=p.src; })();
 }
-
 function renderLists(){
   cntIn.textContent=pool.length; cntOut.textContent=out.length;
   listIn.innerHTML=''; listOut.innerHTML='';
   pool.forEach(n=>pill(n,listIn)); out.forEach(n=>pill(n,listOut));
 }
-
 function lightbox(src){ lbimg.src=src; lb.style.display='flex'; }
 lb.addEventListener('click', ()=>{ lb.style.display='none'; lbimg.src=''; });
-
 async function renderSide(name, bigImgEl, galEl, linkEl){
   bigImgEl.removeAttribute('src'); linkEl.href='#';
   const primary = await loadPrimary(name);
@@ -239,7 +217,6 @@ async function renderSide(name, bigImgEl, galEl, linkEl){
     galEl.appendChild(im);
   });
 }
-
 function drawPair(){
   if(pool.length<=1) return;
   const a=Math.floor(Math.random()*pool.length);
@@ -251,14 +228,13 @@ function drawPair(){
   status.textContent = pool.length + ' aktiv | Ziel: ' + target + (adultEl.checked ? ' | Erw. an' : '');
   arena.style.display='block';
 }
-
 function start(){
-  pool = uniq(namesEl.value.split(/\r?\\n/).map(s=>s.trim()).filter(Boolean));
+  // FIX: richtige Zeilentrennung
+  pool = uniq(namesEl.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean));
   out=[]; history=[]; target=Math.max(1,parseInt(targetEl.value||'1',10));
   if(pool.length<2||target>=pool.length){ alert('Mind. 2 unterschiedliche Namen & Ziel kleiner als Anzahl.'); return; }
   renderLists(); drawPair(); undoBtn.disabled=true; result.style.display='none';
 }
-
 function pick(idx){
   if(currentPair.length<2) return;
   const w=currentPair[idx], l=currentPair[1-idx];
@@ -266,13 +242,11 @@ function pick(idx){
   if(pool.length<=target){ showResult(); return; }
   renderLists(); drawPair();
 }
-
 function undo(){
   const h=history.pop(); if(!h) return;
   pool = pool.filter(n=>n!==h.w); const j = out.lastIndexOf(h.l); if(j>-1) out.splice(j,1);
   pool.push(h.w,h.l); undoBtn.disabled = history.length===0; renderLists(); drawPair();
 }
-
 function showResult(){
   arena.style.display='none'; result.style.display='block'; survivors.innerHTML='';
   pool.forEach(async n=>{
@@ -283,7 +257,6 @@ function showResult(){
     const p=await loadPrimary(n); if(p&&p.src) img.src=p.src;
   });
 }
-
 startBtn.onclick = start;
 demoBtn.onclick = ()=>{ namesEl.value = ['Mia Malkova','Johnny Sins','Margot Robbie','Tom Cruise','Ariana Grande','Zendaya'].join('\n'); };
 leftBtn.onclick = ()=> pick(0); rightBtn.onclick = ()=> pick(1);
