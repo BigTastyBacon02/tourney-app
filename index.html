@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>1×1 Auswahl</title>
+  <title>1×1 Auswahl – Promi-Raten</title>
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#1f6feb">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -34,20 +34,22 @@
     .src{font-size:11px;color:var(--muted)}
     .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;z-index:999999}
     .lightbox img{max-width:90vw;max-height:85vh;border-radius:12px;border:1px solid #333}
+    .warn{background:#221; border:1px solid #522; color:#f6c; border-radius:10px; padding:8px 10px; font-size:12px; margin-top:6px}
   </style>
 </head>
 <body>
-  <h1>1×1 Auswahl</h1>
+  <h1>1×1 Auswahl – Promi-Raten</h1>
   <div class="card">
     <div class="row">
       <label class="mini">Ziel-Anzahl<br><input id="target" type="number" value="1" min="1"></label>
-      <label class="mini">Erwachsenenmodus (mehr Quellen, kann sensible Bilder zeigen)<br><input id="adult" type="checkbox" checked></label>
+      <label class="mini">Erwachsenenmodus (zeigt ggf. sensible Bilder)<br><input id="adult" type="checkbox" checked></label>
       <button id="startBtn" class="btn pri">Starten</button>
       <button id="demoBtn" class="btn sec">Demo</button>
     </div>
     <textarea id="names" placeholder="Name 1
 Name 2
 Name 3"></textarea>
+    <div class="warn">Hinweis: Bilder kommen aus <b>Wikidata/Wikimedia Commons</b> und <b>Openverse</b>. Für Promis und Adult-Stars liefert Wikidata oft sehr genaue Porträts (Eigenschaft P18). Openverse ergänzt zusätzliche Bilder. Es kann trotzdem Ausreißer geben.</div>
   </div>
 
   <div class="layout">
@@ -102,65 +104,110 @@ const listIn=$('#listIn'), listOut=$('#listOut'), cntIn=$('#cntIn'), cntOut=$('#
 const lb=$('#lb'), lbimg=$('#lbimg');
 
 let pool=[], out=[], currentPair=[], history=[], target=1;
-const cachePrimary={}, cacheGalleries={};
+const cachePrimary={}, cacheGalleries={}, cacheThumbs={};
 
-function uniq(arr){return Array.from(new Set(arr));}
-function hostOf(u){try{return new URL(u).host;}catch(e){return '';}}
+const WD_SEARCH = 'https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&origin=*&language=en&uselang=en&type=item&limit=5&search=';
+const WD_GET = 'https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&origin=*&props=claims&ids=';
 
-// Wikipedia first-thumb
-async function wikiThumb(name, size=300){
-  const u='https://de.wikipedia.org/w/api.php?action=query&format=json&origin=*&prop=pageimages&piprop=thumbnail&pithumbsize='+size+'&generator=search&gsrlimit=1&gsrsearch='+encodeURIComponent(name);
-  try{const r=await fetch(u);const j=await r.json();
-    if(j&&j.query&&j.query.pages){const v=Object.values(j.query.pages)[0];
-      if(v&&v.thumbnail) return {src:v.thumbnail.source, creditUrl:'https://de.wikipedia.org/wiki/'+encodeURIComponent(name)};}
-  }catch(e){} return null;
+// Helpers
+function uniq(a){return Array.from(new Set(a));}
+function hostOf(u){try{return new URL(u).host;}catch(e){return ''; }}
+
+async function wikidataLookup(name){
+  // Try EN then DE
+  let q = await fetch(WD_SEARCH + encodeURIComponent(name)).then(r=>r.json()).catch(()=>null);
+  if(!q || !q.search || !q.search.length){
+    q = await fetch(WD_SEARCH.replace('language=en','language=de').replace('uselang=en','uselang=de') + encodeURIComponent(name)).then(r=>r.json()).catch(()=>null);
+  }
+  if(!q || !q.search || !q.search.length) return null;
+  // Prefer items that are humans (we'll verify on wbgetentities)
+  const cand = q.search[0];
+  return cand.id; // Q-id
 }
 
-// Wikimedia Commons gallery (multiple images)
-async function commonsThumbs(name, n=6, width=320){
-  const search='https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrsearch='+encodeURIComponent(name)+'&gsrlimit='+n+'&gsrnamespace=6&prop=imageinfo&iiprop=url&iiurlwidth='+width;
+function claimImageFilename(entity){
+  // P18 image
+  const cl = entity && entity.claims && entity.claims.P18;
+  if(!cl || !cl.length) return null;
+  const v = cl[0].mainsnak.datavalue && cl[0].mainsnak.datavalue.value;
+  return v || null; // filename like "Some Person.jpg"
+}
+function claimCommonsCategory(entity){
+  const cl = entity && entity.claims && entity.claims.P373;
+  if(!cl || !cl.length) return null;
+  const v = cl[0].mainsnak.datavalue && cl[0].mainsnak.datavalue.value;
+  return v || null; // category title
+}
+
+function commonsFileURL(filename,width=400){
+  return 'https://commons.wikimedia.org/wiki/Special:FilePath/'+encodeURIComponent(filename)+'?width='+width;
+}
+
+async function commonsCategoryThumbs(cat, n=10, width=320){
+  const ep='https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&generator=categorymembers&gcmtype=file&gcmlimit='+n+'&gcmtitle=Category:'+encodeURIComponent(cat)+'&prop=imageinfo&iiprop=url&iiurlwidth='+width;
   try{
-    const r=await fetch(search); const j=await r.json();
+    const r=await fetch(ep); const j=await r.json();
     if(!(j&&j.query&&j.query.pages)) return [];
     const pages=Object.values(j.query.pages);
-    const out=pages.map(p=>{
+    return pages.map(p=>{
       const ii=p.imageinfo&&p.imageinfo[0]; if(!ii) return null;
-      const thumb=ii.thumburl||ii.url; const page='https://commons.wikimedia.org/wiki/File:'+encodeURIComponent(p.title.replace('File:',''));
-      return {src:thumb, creditUrl:page};
+      const src=ii.thumburl||ii.url; const credit='https://commons.wikimedia.org/wiki/File:'+encodeURIComponent(p.title.replace('File:',''));
+      return {src, creditUrl: credit};
     }).filter(Boolean);
-    return out;
   }catch(e){ return []; }
 }
 
-// Openverse thumbs (supports mature)
-async function openverseThumbs(name, n=6, allowMature=true){
+async function openverseThumbs(name,n=10,allowMature=true){
   const u='https://api.openverse.engineering/v1/images/?q='+encodeURIComponent(name)+'&page_size='+n+(allowMature?'&mature=true':'&mature=false');
   try{
     const r=await fetch(u); if(!r.ok) return [];
-    const j=await r.json(); const res = (j.results||[]).map(it=>({src:it.thumbnail||it.url, creditUrl:it.foreign_landing_url||it.url}));
-    return res;
+    const j=await r.json();
+    return (j.results||[]).map(it=>({src:it.thumbnail||it.url, creditUrl:it.foreign_landing_url||it.url}));
   }catch(e){ return []; }
 }
 
 async function loadPrimary(name){
-  if(name in cachePrimary) return cachePrimary[name];
-  // try wiki first, then openverse
-  let pic = await wikiThumb(name, 400);
-  if(!pic){ const ov = await openverseThumbs(name, 1, adultEl.checked); pic = ov[0] || null; }
-  cachePrimary[name]=pic; return pic;
+  if(cachePrimary[name]) return cachePrimary[name];
+  const qid = await wikidataLookup(name);
+  let primary=null;
+  if(qid){
+    const e = await fetch(WD_GET + encodeURIComponent(qid)).then(r=>r.json()).catch(()=>null);
+    const ent = e && e.entities && e.entities[qid];
+    const fn = claimImageFilename(ent);
+    if(fn) primary = { src: commonsFileURL(fn, 500), creditUrl: 'https://www.wikidata.org/wiki/'+qid };
+  }
+  if(!primary){
+    const ov = await openverseThumbs(name,1, adultEl.checked);
+    if(ov[0]) primary = ov[0];
+  }
+  cachePrimary[name]=primary;
+  return primary;
 }
 
 async function loadGallery(name){
-  if(name in cacheGalleries) return cacheGalleries[name];
-  const commons = await commonsThumbs(name, 8, 320);
-  const ov = await openverseThumbs(name, 8, adultEl.checked);
-  // combine & dedupe by src host+path
-  const key = u => u && (u.src||'').toLowerCase();
-  const map = new Map();
-  [...commons, ...ov].forEach(it=>{ if(it && it.src && !map.has(key(it))) map.set(key(it), it); });
-  const arr = Array.from(map.values());
-  cacheGalleries[name]=arr;
-  return arr;
+  if(cacheGalleries[name]) return cacheGalleries[name];
+  const qid = await wikidataLookup(name);
+  let imgs=[];
+  if(qid){
+    const e = await fetch(WD_GET + encodeURIComponent(qid)).then(r=>r.json()).catch(()=>null);
+    const ent = e && e.entities && e.entities[qid];
+    const cat = claimCommonsCategory(ent);
+    if(cat){
+      const cms = await commonsCategoryThumbs(cat, 12, 360);
+      imgs = imgs.concat(cms);
+    }
+    const fn = claimImageFilename(ent);
+    if(fn){
+      imgs.unshift({src: commonsFileURL(fn, 600), creditUrl: 'https://www.wikidata.org/wiki/'+qid});
+    }
+  }
+  const ov = await openverseThumbs(name, 12, adultEl.checked);
+  imgs = imgs.concat(ov);
+  // dedupe
+  const seen=new Set(), out=[];
+  imgs.forEach(it=>{ if(it && it.src){ const k=it.src.toLowerCase(); if(!seen.has(k)){ seen.add(k); out.push(it); } } });
+  cacheGalleries[name]=out;
+  return out;
 }
 
 function pill(name, toBox){
@@ -176,24 +223,18 @@ function renderLists(){
   pool.forEach(n=>pill(n,listIn)); out.forEach(n=>pill(n,listOut));
 }
 
-function lightbox(src){
-  lbimg.src = src; lb.style.display='flex';
-}
+function lightbox(src){ lbimg.src=src; lb.style.display='flex'; }
 lb.addEventListener('click', ()=>{ lb.style.display='none'; lbimg.src=''; });
 
 async function renderSide(name, bigImgEl, galEl, linkEl){
-  // Primary image
-  bigImgEl.removeAttribute('src');
-  linkEl.href = '#';
+  bigImgEl.removeAttribute('src'); linkEl.href='#';
   const primary = await loadPrimary(name);
   if(primary){ bigImgEl.src = primary.src; linkEl.href = primary.creditUrl || '#'; }
-
-  // Gallery
   galEl.innerHTML='';
   const imgs = await loadGallery(name);
   imgs.forEach(it=>{
-    const im = document.createElement('img'); im.src = it.src; im.title = new URL(it.creditUrl||it.src).host;
-    im.addEventListener('click', ()=>{ bigImgEl.src = it.src; linkEl.href = it.creditUrl || it.src; });
+    const im=document.createElement('img'); im.src=it.src; im.title = hostOf(it.creditUrl||it.src);
+    im.addEventListener('click', ()=>{ bigImgEl.src=it.src; linkEl.href = it.creditUrl || it.src; });
     im.addEventListener('dblclick', ()=> lightbox(it.src));
     galEl.appendChild(im);
   });
@@ -212,7 +253,7 @@ function drawPair(){
 }
 
 function start(){
-  pool = uniq(namesEl.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean));
+  pool = uniq(namesEl.value.split(/\r?\\n/).map(s=>s.trim()).filter(Boolean));
   out=[]; history=[]; target=Math.max(1,parseInt(targetEl.value||'1',10));
   if(pool.length<2||target>=pool.length){ alert('Mind. 2 unterschiedliche Namen & Ziel kleiner als Anzahl.'); return; }
   renderLists(); drawPair(); undoBtn.disabled=true; result.style.display='none';
@@ -244,7 +285,7 @@ function showResult(){
 }
 
 startBtn.onclick = start;
-demoBtn.onclick = ()=>{ namesEl.value = ['Mia Malkova','Johnny Sins','Anna','Ben','Chris','Daria'].join('\n'); };
+demoBtn.onclick = ()=>{ namesEl.value = ['Mia Malkova','Johnny Sins','Margot Robbie','Tom Cruise','Ariana Grande','Zendaya'].join('\n'); };
 leftBtn.onclick = ()=> pick(0); rightBtn.onclick = ()=> pick(1);
 undoBtn.onclick = undo; shuffleBtn.onclick = drawPair;
 </script>
