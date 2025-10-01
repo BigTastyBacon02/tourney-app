@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>1×1 Auswahl</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#1f6feb">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="1×1 Auswahl">
+  <link rel="apple-touch-icon" href="icon-180.png">
+
+  <style>
+    :root { --bg:#0b0c0f; --card:#111317; --text:#e6e7ea; --muted:#9aa3b2; --brand:#1f6feb; --line:#1c1f26; --pill-bg:#1a2335; --pill-text:#cce0ff; }
+    @media (prefers-color-scheme: light) {
+      :root { --bg:#f7f8fa; --card:#fff; --text:#111318; --muted:#5a6577; --brand:#1f6feb; --line:#e7e8eb; --pill-bg:#eef4ff; --pill-text:#1b3a73; }
+    }
+    *{box-sizing:border-box} html,body{height:100%}
+    body{margin:0;padding:env(safe-area-inset-top) 16px env(safe-area-inset-bottom);background:var(--bg);color:var(--text);font-family:-apple-system,system-ui,Segoe UI,Roboto,Arial,sans-serif}
+    .wrap{max-width:860px;margin:0 auto}
+    header{display:flex;align-items:center;gap:10px;padding:14px 6px}
+    h1{margin:0;font-size:22px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;box-shadow:0 10px 30px rgba(0,0,0,.18)}
+    .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+    .grow{flex:1 1 auto;min-width:160px}
+    label{font-weight:600;color:var(--muted);font-size:14px}
+    input[type="number"],textarea{width:100%;background:transparent;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:16px;outline:none}
+    textarea{height:160px;resize:vertical}
+    .btn{border:0;border-radius:12px;padding:12px 16px;font-weight:700;cursor:pointer;background:var(--brand);color:#fff;font-size:16px}
+    .btn.secondary{background:transparent;color:var(--text);border:1px solid var(--line)}
+    .nameBtn{font-size:18px;padding:16px 18px;border:1px solid var(--line);border-radius:12px;background:color-mix(in srgb, var(--card) 85%, transparent);font-weight:800;min-height:64px}
+    .vs{font-weight:700;opacity:.7}
+    .pill{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:var(--pill-bg);color:var(--pill-text);font-weight:700;font-size:13px;margin:4px 6px 0 0}
+    .thumb{width:20px;height:20px;border-radius:6px;object-fit:cover;border:1px solid var(--line);background:#0f131a}
+    .lists{display:grid;grid-template-columns:260px 1fr;gap:12px}
+    .col{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px}
+    .mini{font-size:12px;color:var(--muted)}
+    .pair{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;margin-top:12px}
+    .winflash{animation:flash .4s ease-out;background:#113113 !important;border-color:#1e4620 !important;color:#1e4620 !important}
+    @keyframes flash{from{transform:scale(1.01)}to{transform:scale(1)}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>1×1 Auswahl</h1>
+      <div class="grow"></div>
+      <button class="btn secondary" id="installTipBtn">Zum Home-Bildschirm</button>
+      <button class="btn secondary" id="resetBtn">Neu</button>
+    </header>
+
+    <div class="card">
+      <div class="row">
+        <div class="grow">
+          <label for="target">Ziel-Anzahl</label>
+          <input id="target" type="number" value="1" min="1" step="1" />
+        </div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <div class="grow">
+          <label for="names">Namen (je Zeile)</label>
+          <textarea id="names" placeholder="Name 1
+Name 2
+Name 3"></textarea>
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn" id="startBtn">Starten</button>
+        <button class="btn secondary" id="demoBtn">Demo einfügen</button>
+        <div class="grow"></div>
+        <div class="mini" id="aliveInfo">0 aktiv</div>
+      </div>
+      <div class="mini" id="installHint" style="display:none;margin-top:8px">
+        In Safari: <b>Teilen</b> → <b>Zum Home-Bildschirm</b>, dann läuft es wie eine App und offline.
+      </div>
+    </div>
+
+    <div class="lists" style="margin-top:12px">
+      <div class="col">
+        <h3 style="margin:0 0 6px 0">Drin <span class="mini" id="cntIn">0</span></h3>
+        <div id="listIn"></div>
+        <h3 style="margin:10px 0 6px 0">Raus <span class="mini" id="cntOut">0</span></h3>
+        <div id="listOut"></div>
+      </div>
+
+      <div class="col">
+        <div id="arena" style="display:none">
+          <div class="pair">
+            <button id="leftBtn" class="nameBtn">–</button>
+            <div class="vs">vs</div>
+            <button id="rightBtn" class="nameBtn">–</button>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <button class="btn secondary" id="undoBtn" disabled>Rückgängig</button>
+            <button class="btn secondary" id="shuffleBtn">Neu mischen</button>
+            <div class="grow"></div>
+            <div class="mini" id="roundInfo"></div>
+          </div>
+        </div>
+
+        <div id="result" style="display:none">
+          <h3 style="margin:0 0 6px 0">Ergebnis</h3>
+          <div id="survivors"></div>
+          <div class="row" style="margin-top:10px">
+            <button class="btn" id="continueBtn">Weiter reduzieren</button>
+            <button class="btn secondary" id="copyBtn">Namen kopieren</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const $ = s => document.querySelector(s);
+  const namesEl = $('#names'), targetEl = $('#target'), startBtn = $('#startBtn'), demoBtn = $('#demoBtn'),
+        arena = $('#arena'), leftBtn = $('#leftBtn'), rightBtn = $('#rightBtn'), undoBtn = $('#undoBtn'),
+        shuffleBtn = $('#shuffleBtn'), result = $('#result'), survivors = $('#survivors'),
+        continueBtn = $('#continueBtn'), copyBtn = $('#copyBtn'), roundInfo = $('#roundInfo'),
+        aliveInfo = $('#aliveInfo'), installHint = $('#installHint'), installTipBtn = $('#installTipBtn'),
+        listIn = $('#listIn'), listOut = $('#listOut'), cntIn = $('#cntIn'), cntOut = $('#cntOut'), resetBtn = $('#resetBtn');
+
+  let pool = [], out = [], currentPair = [], history = [], target = 1, round = 1;
+  const STORAGE_KEY = 'tourney-pwa-v1';
+  const wikiThumb = async (name) => {
+    const u = 'https://de.wikipedia.org/w/api.php?action=query&format=json&origin=*&prop=pageimages&piprop=thumbnail&pithumbsize=96&generator=search&gsrlimit=1&gsrsearch=' + encodeURIComponent(name);
+    try {
+      const r = await fetch(u); const j = await r.json();
+      if (j && j.query && j.query.pages) {
+        const v = Object.values(j.query.pages)[0];
+        return v && v.thumbnail ? v.thumbnail.source : null;
+      }
+    } catch(e) {}
+    return null;
+  };
+  const cacheImgs = {};
+  const uniq = a => [...new Set(a)];
+  const save = ()=>localStorage.setItem(STORAGE_KEY, JSON.stringify({pool,out,target,round}));
+  const load = ()=>{try{const j=JSON.parse(localStorage.getItem(STORAGE_KEY)||'{}');pool=j.pool||[];out=j.out||[];target=j.target||1;round=j.round||1;}catch(e){}}
+  const isStandalone = ()=> (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone;
+
+  function pill(name, sideBox){
+    const p = document.createElement('div');
+    p.className='pill';
+    const img = document.createElement('img'); img.className='thumb';
+    const txt = document.createElement('span'); txt.textContent = name;
+    p.appendChild(img); p.appendChild(txt); sideBox.appendChild(p);
+    (async ()=>{
+      if (cacheImgs[name] === undefined) cacheImgs[name] = await wikiThumb(name);
+      if (cacheImgs[name]) img.src = cacheImgs[name];
+    })();
+  }
+
+  function renderLists(){
+    cntIn.textContent = pool.length; cntOut.textContent = out.length;
+    listIn.innerHTML=''; listOut.innerHTML='';
+    pool.forEach(n => pill(n, listIn));
+    out.forEach(n => pill(n, listOut));
+  }
+
+  function updateStatus(){
+    aliveInfo.textContent = pool.length + ' aktiv';
+    roundInfo.textContent = pool.length <= target ? 'Ziel erreicht' : 'Runde ' + round;
+  }
+
+  function drawPair(){
+    if (pool.length <= 1) return;
+    const a = Math.floor(Math.random()*pool.length);
+    let b = Math.floor(Math.random()*pool.length);
+    while(b===a) b = Math.floor(Math.random()*pool.length);
+    currentPair = [pool[a], pool[b]];
+    leftBtn.textContent = currentPair[0];
+    rightBtn.textContent = currentPair[1];
+    arena.style.display='block';
+  }
+
+  function start(){
+    pool = uniq(namesEl.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean));
+    out = [];
+    target = Math.max(1, parseInt(targetEl.value || '1', 10));
+    if (pool.length < 2 || target >= pool.length) { alert('Mind. 2 unterschiedliche Namen & Ziel kleiner als Anzahl.'); return; }
+    history = []; round = 1; result.style.display='none'; undoBtn.disabled = true;
+    renderLists(); drawPair(); updateStatus(); save();
+  }
+
+  function pick(idx){
+    if (currentPair.length < 2) return;
+    const winner = currentPair[idx], loser = currentPair[1-idx];
+    pool = pool.filter(n=>n!==currentPair[0] && n!==currentPair[1]); pool.push(winner);
+    out.push(loser); history.push({winner,loser}); undoBtn.disabled = false;
+    const btn = idx===0 ? leftBtn : rightBtn; btn.classList.add('winflash'); setTimeout(()=>btn.classList.remove('winflash'), 420);
+    renderLists();
+    if (pool.length <= target) { showResult(); save(); return; }
+    drawPair(); updateStatus(); save();
+  }
+
+  function undo(){
+    const last = history.pop(); if (!last) return;
+    const i = pool.indexOf(last.winner); if (i>=0) pool.splice(i,1);
+    const j = out.lastIndexOf(last.loser); if (j>=0) out.splice(j,1);
+    pool.push(last.winner, last.loser); undoBtn.disabled = history.length===0;
+    renderLists(); drawPair(); updateStatus(); save();
+  }
+
+  function showResult(){
+    arena.style.display='none'; result.style.display='block';
+    survivors.innerHTML = '';
+    pool.slice().sort((a,b)=>a.localeCompare(b,'de')).forEach(n=>{
+      const span = document.createElement('span'); span.className='pill';
+      const img = document.createElement('img'); img.className='thumb';
+      span.appendChild(img); span.appendChild(document.createTextNode(n));
+      survivors.appendChild(span);
+      (async()=>{ if (cacheImgs[n]===undefined) cacheImgs[n]=await wikiThumb(n); if (cacheImgs[n]) img.src = cacheImgs[n]; })();
+    });
+    updateStatus();
+  }
+
+  function copyNames(){
+    const text = pool.join('\n');
+    navigator.clipboard.writeText(text).then(()=>{
+      copyBtn.textContent='Kopiert ✓'; setTimeout(()=>copyBtn.textContent='Namen kopieren',1200);
+    }).catch(()=> alert('Markiere und kopiere manuell:\n\n'+text));
+  }
+
+  function resetAll(){
+    pool=[]; out=[]; history=[]; round=1; target=1;
+    namesEl.value=''; targetEl.value='1';
+    arena.style.display='none'; result.style.display='none';
+    renderLists(); updateStatus(); save();
+  }
+
+  // Events
+  startBtn.addEventListener('click', start);
+  demoBtn.addEventListener('click', ()=>{ namesEl.value = ['Anna','Ben','Chris','Daria','Emre','Fatma','Goran','Hanna'].join('\n'); });
+  leftBtn.addEventListener('click', ()=>pick(0));
+  rightBtn.addEventListener('click', ()=>pick(1));
+  undoBtn.addEventListener('click', undo);
+  shuffleBtn.addEventListener('click', drawPair);
+  continueBtn.addEventListener('click', ()=>{
+    const nt = Math.max(1, parseInt(prompt('Neue Ziel-Anzahl (>=1):', String(Math.max(1, target-1)))||'1', 10));
+    if (nt >= pool.length) { alert('Neue Ziel-Anzahl muss kleiner als aktuelle Anzahl sein.'); return; }
+    target = nt; arena.style.display='block'; result.style.display='none'; drawPair(); updateStatus(); save();
+  });
+  copyBtn.addEventListener('click', copyNames);
+  resetBtn.addEventListener('click', resetAll);
+  installTipBtn.addEventListener('click', ()=> alert('In Safari: „Teilen“ → „Zum Home-Bildschirm“. Danach läuft die App im Vollbild und offline.'));
+
+  // Init
+  (async ()=>{
+    load(); renderLists(); updateStatus();
+    if (!isStandalone()) installHint.style.display='block';
+    if (pool.length>=2){ drawPair(); arena.style.display='block'; }
+    if ('serviceWorker' in navigator) try{ await navigator.serviceWorker.register('./sw.js'); }catch(e){}
+  })();
+</script>
+</body>
+</html>
