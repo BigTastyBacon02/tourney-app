@@ -12,6 +12,7 @@
   <link rel="apple-touch-icon" href="icon-180.png">
   <style>
     :root{--bg:#0b0c0f;--card:#111317;--text:#e6e7ea;--line:#1c1f26;--brand:#1f6feb;--muted:#9aa3b2}
+    *{box-sizing:border-box}
     body{margin:0;font-family:-apple-system,system-ui,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);padding:16px}
     h1{font-size:22px;margin:0 0 8px}
     .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
@@ -19,15 +20,20 @@
     textarea,input{width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:#0f1218;color:var(--text);font-size:16px}
     .btn{border:0;border-radius:12px;padding:12px 16px;font-weight:700;cursor:pointer}
     .pri{background:var(--brand);color:#fff}
-    .sec{background:#161a22;color:#e6e7ea;border:1px solid var(--line)}
+    .sec{background:#161a22;color:var(--text);border:1px solid var(--line)}
     .layout{display:grid;grid-template-columns:260px 1fr;gap:12px}
     .pill{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;margin:4px;border-radius:999px;background:#161a22;border:1px solid var(--line)}
     .thumb{width:20px;height:20px;border-radius:6px;object-fit:cover}
     .pair{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:start;margin-top:8px}
-    .opt{display:flex;flex-direction:column;align-items:center;gap:8px}
-    .bigimg{width:220px;height:220px;object-fit:cover;border-radius:14px;border:1px solid var(--line);background:#0f131a}
+    .opt{display:flex;flex-direction:column;gap:10px}
+    .bigimg{width:240px;height:240px;object-fit:cover;border-radius:14px;border:1px solid var(--line);background:#0f131a}
     .opt button{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:#18202b;color:var(--text);font-weight:800}
     .mini{font-size:12px;color:var(--muted)}
+    .gal{display:flex;gap:8px;overflow:auto;padding-bottom:4px}
+    .gal img{width:76px;height:76px;border-radius:10px;object-fit:cover;border:1px solid var(--line);background:#0f131a;flex:0 0 auto;cursor:pointer}
+    .src{font-size:11px;color:var(--muted)}
+    .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;z-index:999999}
+    .lightbox img{max-width:90vw;max-height:85vh;border-radius:12px;border:1px solid #333}
   </style>
 </head>
 <body>
@@ -35,7 +41,7 @@
   <div class="card">
     <div class="row">
       <label class="mini">Ziel-Anzahl<br><input id="target" type="number" value="1" min="1"></label>
-      <label class="mini">Erwachsenenmodus (Bilder ohne Filter)<br><input id="adult" type="checkbox" checked></label>
+      <label class="mini">Erwachsenenmodus (mehr Quellen, kann sensible Bilder zeigen)<br><input id="adult" type="checkbox" checked></label>
       <button id="startBtn" class="btn pri">Starten</button>
       <button id="demoBtn" class="btn sec">Demo</button>
     </div>
@@ -57,14 +63,16 @@ Name 3"></textarea>
         <div class="pair">
           <div class="opt">
             <img id="li" class="bigimg" alt="links">
+            <div class="gal" id="lgal"></div>
             <button id="leftBtn">–</button>
-            <a id="lg" class="mini" href="#" target="_blank">Quelle</a>
+            <div class="src"><a id="lg" href="#" target="_blank">Quelle</a></div>
           </div>
           <div style="align-self:center">vs</div>
           <div class="opt">
             <img id="ri" class="bigimg" alt="rechts">
+            <div class="gal" id="rgal"></div>
             <button id="rightBtn">–</button>
-            <a id="rg" class="mini" href="#" target="_blank">Quelle</a>
+            <div class="src"><a id="rg" href="#" target="_blank">Quelle</a></div>
           </div>
         </div>
         <div class="row" style="margin-top:8px">
@@ -80,48 +88,86 @@ Name 3"></textarea>
     </div>
   </div>
 
+  <div class="lightbox" id="lb"><img id="lbimg" alt=""></div>
+
 <script>
 const $=s=>document.querySelector(s);
 const namesEl=$('#names'), targetEl=$('#target'), adultEl=$('#adult');
 const startBtn=$('#startBtn'), demoBtn=$('#demoBtn');
 const arena=$('#arena'), result=$('#result'), survivors=$('#survivors');
-const li=$('#li'), ri=$('#ri'), leftBtn=$('#leftBtn'), rightBtn=$('#rightBtn');
+const li=$('#li'), ri=$('#ri'), lgal=$('#lgal'), rgal=$('#rgal');
+const leftBtn=$('#leftBtn'), rightBtn=$('#rightBtn');
 const lg=$('#lg'), rg=$('#rg'), undoBtn=$('#undoBtn'), shuffleBtn=$('#shuffleBtn');
 const listIn=$('#listIn'), listOut=$('#listOut'), cntIn=$('#cntIn'), cntOut=$('#cntOut'), status=$('#status');
+const lb=$('#lb'), lbimg=$('#lbimg');
 
 let pool=[], out=[], currentPair=[], history=[], target=1;
-const cacheImgs={};
+const cachePrimary={}, cacheGalleries={};
 
-async function wikiThumb(name){
-  const u='https://de.wikipedia.org/w/api.php?action=query&format=json&origin=*&prop=pageimages&piprop=thumbnail&pithumbsize=300&generator=search&gsrlimit=1&gsrsearch='+encodeURIComponent(name);
+function uniq(arr){return Array.from(new Set(arr));}
+function hostOf(u){try{return new URL(u).host;}catch(e){return '';}}
+
+// Wikipedia first-thumb
+async function wikiThumb(name, size=300){
+  const u='https://de.wikipedia.org/w/api.php?action=query&format=json&origin=*&prop=pageimages&piprop=thumbnail&pithumbsize='+size+'&generator=search&gsrlimit=1&gsrsearch='+encodeURIComponent(name);
   try{const r=await fetch(u);const j=await r.json();
     if(j&&j.query&&j.query.pages){const v=Object.values(j.query.pages)[0];
-      if(v&&v.thumbnail) return {src:v.thumbnail.source,creditUrl:'https://de.wikipedia.org/wiki/'+encodeURIComponent(name)};}
-  }catch(e){}
-  return null;
+      if(v&&v.thumbnail) return {src:v.thumbnail.source, creditUrl:'https://de.wikipedia.org/wiki/'+encodeURIComponent(name)};}
+  }catch(e){} return null;
 }
 
-async function openverseThumb(name, allowMature){
-  const u='https://api.openverse.engineering/v1/images/?q='+encodeURIComponent(name)+'&page_size=1'+(allowMature?'&mature=true':'&mature=false');
-  try{const r=await fetch(u);if(!r.ok)return null;const j=await r.json();
-    const it=j&&j.results&&j.results[0];if(!it)return null;
-    return {src:it.thumbnail||it.url,creditUrl:it.foreign_landing_url||it.url};}
-  catch(e){return null;}
+// Wikimedia Commons gallery (multiple images)
+async function commonsThumbs(name, n=6, width=320){
+  const search='https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrsearch='+encodeURIComponent(name)+'&gsrlimit='+n+'&gsrnamespace=6&prop=imageinfo&iiprop=url&iiurlwidth='+width;
+  try{
+    const r=await fetch(search); const j=await r.json();
+    if(!(j&&j.query&&j.query.pages)) return [];
+    const pages=Object.values(j.query.pages);
+    const out=pages.map(p=>{
+      const ii=p.imageinfo&&p.imageinfo[0]; if(!ii) return null;
+      const thumb=ii.thumburl||ii.url; const page='https://commons.wikimedia.org/wiki/File:'+encodeURIComponent(p.title.replace('File:',''));
+      return {src:thumb, creditUrl:page};
+    }).filter(Boolean);
+    return out;
+  }catch(e){ return []; }
 }
 
-async function loadPortrait(name){
-  if(name in cacheImgs) return cacheImgs[name];
-  let pic=await wikiThumb(name);
-  if(!pic) pic=await openverseThumb(name, adultEl.checked);
-  cacheImgs[name]=pic||null; return cacheImgs[name];
+// Openverse thumbs (supports mature)
+async function openverseThumbs(name, n=6, allowMature=true){
+  const u='https://api.openverse.engineering/v1/images/?q='+encodeURIComponent(name)+'&page_size='+n+(allowMature?'&mature=true':'&mature=false');
+  try{
+    const r=await fetch(u); if(!r.ok) return [];
+    const j=await r.json(); const res = (j.results||[]).map(it=>({src:it.thumbnail||it.url, creditUrl:it.foreign_landing_url||it.url}));
+    return res;
+  }catch(e){ return []; }
+}
+
+async function loadPrimary(name){
+  if(name in cachePrimary) return cachePrimary[name];
+  // try wiki first, then openverse
+  let pic = await wikiThumb(name, 400);
+  if(!pic){ const ov = await openverseThumbs(name, 1, adultEl.checked); pic = ov[0] || null; }
+  cachePrimary[name]=pic; return pic;
+}
+
+async function loadGallery(name){
+  if(name in cacheGalleries) return cacheGalleries[name];
+  const commons = await commonsThumbs(name, 8, 320);
+  const ov = await openverseThumbs(name, 8, adultEl.checked);
+  // combine & dedupe by src host+path
+  const key = u => u && (u.src||'').toLowerCase();
+  const map = new Map();
+  [...commons, ...ov].forEach(it=>{ if(it && it.src && !map.has(key(it))) map.set(key(it), it); });
+  const arr = Array.from(map.values());
+  cacheGalleries[name]=arr;
+  return arr;
 }
 
 function pill(name, toBox){
   const div=document.createElement('div');div.className='pill';
   const img=document.createElement('img');img.className='thumb';div.appendChild(img);
-  div.appendChild(document.createTextNode(name));
-  toBox.appendChild(div);
-  (async()=>{const p=await loadPortrait(name); if(p&&p.src) img.src=p.src;})();
+  div.appendChild(document.createTextNode(' '+name)); toBox.appendChild(div);
+  (async()=>{const p=await loadPrimary(name); if(p&&p.src) img.src=p.src; })();
 }
 
 function renderLists(){
@@ -130,49 +176,77 @@ function renderLists(){
   pool.forEach(n=>pill(n,listIn)); out.forEach(n=>pill(n,listOut));
 }
 
+function lightbox(src){
+  lbimg.src = src; lb.style.display='flex';
+}
+lb.addEventListener('click', ()=>{ lb.style.display='none'; lbimg.src=''; });
+
+async function renderSide(name, bigImgEl, galEl, linkEl){
+  // Primary image
+  bigImgEl.removeAttribute('src');
+  linkEl.href = '#';
+  const primary = await loadPrimary(name);
+  if(primary){ bigImgEl.src = primary.src; linkEl.href = primary.creditUrl || '#'; }
+
+  // Gallery
+  galEl.innerHTML='';
+  const imgs = await loadGallery(name);
+  imgs.forEach(it=>{
+    const im = document.createElement('img'); im.src = it.src; im.title = new URL(it.creditUrl||it.src).host;
+    im.addEventListener('click', ()=>{ bigImgEl.src = it.src; linkEl.href = it.creditUrl || it.src; });
+    im.addEventListener('dblclick', ()=> lightbox(it.src));
+    galEl.appendChild(im);
+  });
+}
+
 function drawPair(){
   if(pool.length<=1) return;
   const a=Math.floor(Math.random()*pool.length);
   let b=Math.floor(Math.random()*pool.length); while(b===a) b=Math.floor(Math.random()*pool.length);
   currentPair=[pool[a],pool[b]];
   leftBtn.textContent=currentPair[0]; rightBtn.textContent=currentPair[1];
-  li.removeAttribute('src'); ri.removeAttribute('src'); lg.href='#'; rg.href='#';
-  (async()=>{const lp=await loadPortrait(currentPair[0]); if(lp){li.src=lp.src; lg.href=lp.creditUrl||'#';}})();
-  (async()=>{const rp=await loadPortrait(currentPair[1]); if(rp){ri.src=rp.src; rg.href=rp.creditUrl||'#';}})();
-  status.textContent = pool.length + ' aktiv | Ziel: ' + target;
+  renderSide(currentPair[0], li, lgal, lg);
+  renderSide(currentPair[1], ri, rgal, rg);
+  status.textContent = pool.length + ' aktiv | Ziel: ' + target + (adultEl.checked ? ' | Erw. an' : '');
+  arena.style.display='block';
 }
 
 function start(){
-  pool=[...new Set(namesEl.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean))];
+  pool = uniq(namesEl.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean));
   out=[]; history=[]; target=Math.max(1,parseInt(targetEl.value||'1',10));
-  if(pool.length<2||target>=pool.length){alert('Mind. 2 unterschiedliche Namen & Ziel kleiner als Anzahl.'); return;}
-  arena.style.display='block'; result.style.display='none'; renderLists(); drawPair(); undoBtn.disabled=true;
+  if(pool.length<2||target>=pool.length){ alert('Mind. 2 unterschiedliche Namen & Ziel kleiner als Anzahl.'); return; }
+  renderLists(); drawPair(); undoBtn.disabled=true; result.style.display='none';
 }
 
 function pick(idx){
   if(currentPair.length<2) return;
   const w=currentPair[idx], l=currentPair[1-idx];
-  pool=pool.filter(n=>n!==w&&n!==l); pool.push(w); out.push(l); history.push({w,l}); undoBtn.disabled=false;
+  pool = pool.filter(n=>n!==w && n!==l); pool.push(w); out.push(l); history.push({w,l}); undoBtn.disabled=false;
   if(pool.length<=target){ showResult(); return; }
   renderLists(); drawPair();
 }
 
 function undo(){
   const h=history.pop(); if(!h) return;
-  pool=pool.filter(n=>n!==h.w); const j=out.lastIndexOf(h.l); if(j>-1) out.splice(j,1);
-  pool.push(h.w,h.l); undoBtn.disabled=history.length===0; renderLists(); drawPair();
+  pool = pool.filter(n=>n!==h.w); const j = out.lastIndexOf(h.l); if(j>-1) out.splice(j,1);
+  pool.push(h.w,h.l); undoBtn.disabled = history.length===0; renderLists(); drawPair();
 }
 
 function showResult(){
   arena.style.display='none'; result.style.display='block'; survivors.innerHTML='';
-  pool.forEach(async n=>{const p=document.createElement('div');p.className='pill';
-    const img=document.createElement('img');img.className='thumb';p.appendChild(img);
-    p.appendChild(document.createTextNode(n)); survivors.appendChild(p);
-    const pic=await loadPortrait(n); if(pic&&pic.src) img.src=pic.src; });
+  pool.forEach(async n=>{
+    const el=document.createElement('div'); el.className='pill';
+    const img=document.createElement('img'); img.className='thumb'; el.appendChild(img);
+    el.appendChild(document.createTextNode(' '+n));
+    survivors.appendChild(el);
+    const p=await loadPrimary(n); if(p&&p.src) img.src=p.src;
+  });
 }
 
-startBtn.onclick=start; demoBtn.onclick=()=>{namesEl.value=['Anna','Ben','Chris','Daria','Mia Malkova','Johnny Sins'].join('\n');};
-leftBtn.onclick=()=>pick(0); rightBtn.onclick=()=>pick(1); undoBtn.onclick=undo; shuffleBtn.onclick=drawPair;
+startBtn.onclick = start;
+demoBtn.onclick = ()=>{ namesEl.value = ['Mia Malkova','Johnny Sins','Anna','Ben','Chris','Daria'].join('\n'); };
+leftBtn.onclick = ()=> pick(0); rightBtn.onclick = ()=> pick(1);
+undoBtn.onclick = undo; shuffleBtn.onclick = drawPair;
 </script>
 </body>
 </html>
