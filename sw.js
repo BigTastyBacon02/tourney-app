@@ -1,5 +1,5 @@
-const CACHE = 'tourney-cache-v2'; // bumped cache to force update
-const ASSETS = ['.', './index.html', './manifest.webmanifest', './icon-180.png'];
+const CACHE = 'tourney-cache-v3';
+const ASSETS = ['.', './index.html', './manifest.webmanifest', './icon-180.png', './pics/placeholder.png', './pics/index.json'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
 });
